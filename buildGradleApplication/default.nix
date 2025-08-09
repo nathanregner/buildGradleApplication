@@ -5,45 +5,71 @@
   writeShellScript,
   makeWrapper,
   mkM2Repository,
-}: {
+}:
+{
   pname,
   version,
   src,
   meta,
   jdk ? pkgs.jdk,
   gradle ? pkgs.gradle,
-  buildInputs ? [],
-  nativeBuildInputs ? [],
-  dependencyFilter ? depSpec: let
-    # Lots of libraries have references to metadata jars that are not present on maven central, for example:
-    # - kasechange-metadata-1.4.1.jar (net.pearx.kasechange:kasechange)
-    # - kotlin-result-metadata-2.0.0.jar (com.michael-bull.kotlin-result:kotlin-result)
-    # - kotlinx-serialization-core-metadata-1.7.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-core)
-    # These will make the nix build fail because we cannot fetch them. They are usually not needed for the build, so it's relatively safe to ignore them by default.
-    # However, it MIGHT be the case that some -metadata.jars ARE actually required but I have not yet found one. If you do, please open an issue!
-    isUnpublishedMetadataJar =
-      depSpec.name == "${depSpec.component.name}-metadata-${depSpec.component.version}.jar";
-  in
-    if isUnpublishedMetadataJar
-    then builtins.trace "Ignoring potentially unpublished metadata jar: ${depSpec.name}" false
-    else true,
-  repositories ? ["https://plugins.gradle.org/m2/" "https://repo1.maven.org/maven2/"],
+  buildInputs ? [ ],
+  nativeBuildInputs ? [ ],
+  dependencyFilter ?
+    depSpec:
+    let
+      # Lots of libraries have references to metadata jars that are not present on maven central, for example:
+      # - kasechange-metadata-1.4.1.jar (net.pearx.kasechange:kasechange)
+      # - kotlin-result-metadata-2.0.0.jar (com.michael-bull.kotlin-result:kotlin-result)
+      # - kotlinx-serialization-core-metadata-1.7.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-core)
+      # These will make the nix build fail because we cannot fetch them. They are usually not needed for the build, so it's relatively safe to ignore them by default.
+      # However, it MIGHT be the case that some -metadata.jars ARE actually required but I have not yet found one. If you do, please open an issue!
+      isUnpublishedMetadataJar =
+        depSpec.name == "${depSpec.component.name}-metadata-${depSpec.component.version}.jar";
+    in
+    if isUnpublishedMetadataJar then
+      builtins.trace "Ignoring potentially unpublished metadata jar: ${depSpec.name}" false
+    else
+      true,
+  repositories ? [
+    "https://plugins.gradle.org/m2/"
+    "https://repo1.maven.org/maven2/"
+  ],
   verificationFile ? "gradle/verification-metadata.xml",
   buildTask ? ":installDist",
   installLocation ? "build/install/*/",
-}: let
+}:
+let
   m2Repository = mkM2Repository {
-    inherit pname version src dependencyFilter repositories verificationFile;
+    inherit
+      pname
+      version
+      src
+      dependencyFilter
+      repositories
+      verificationFile
+      ;
   };
 
   # Prepare a script that will replace that jars with references into the NIX store.
   linkScript = writeShellScript "link-to-jars" ''
     declare -A fileByName
     declare -A hashByName
-    ${
-      lib.concatMapStringsSep "\n"
-      (dep: "fileByName[\"${dep.name}\"]=\"${builtins.toString dep.jar}\"\nhashByName[\"${dep.name}\"]=\"${builtins.toString dep.hash}\"")
-      (builtins.filter (dep: (lib.strings.hasSuffix ".jar" dep.name && !lib.strings.hasSuffix "-javadoc.jar" dep.name && !lib.strings.hasSuffix "-sources.jar" dep.name)) m2Repository.dependencies)
+    ${lib.concatMapStringsSep "\n"
+      (
+        dep:
+        "fileByName[\"${dep.name}\"]=\"${builtins.toString dep.jar}\"\nhashByName[\"${dep.name}\"]=\"${builtins.toString dep.hash}\""
+      )
+      (
+        builtins.filter (
+          dep:
+          (
+            lib.strings.hasSuffix ".jar" dep.name
+            && !lib.strings.hasSuffix "-javadoc.jar" dep.name
+            && !lib.strings.hasSuffix "-sources.jar" dep.name
+          )
+        ) m2Repository.dependencies
+      )
     }
 
     for jar in "$1"/*.jar; do
@@ -71,8 +97,19 @@
   '';
 
   package = stdenvNoCC.mkDerivation {
-    inherit pname version src meta buildInputs;
-    nativeBuildInputs = [gradle jdk makeWrapper] ++ nativeBuildInputs;
+    inherit
+      pname
+      version
+      src
+      meta
+      buildInputs
+      ;
+    nativeBuildInputs = [
+      gradle
+      jdk
+      makeWrapper
+    ]
+    ++ nativeBuildInputs;
     buildPhase = ''
       runHook preBuild
 
@@ -135,6 +172,8 @@
         --set-default JAVA_HOME "${jdk.home}" \
         ''${gappsWrapperArgs[@]}
     '';
+
+    passthru = { inherit m2Repository; };
   };
 in
-  package
+package
