@@ -11,9 +11,11 @@
   repositories ? ["https://plugins.gradle.org/m2/" "https://repo1.maven.org/maven2/"],
   verificationFile ? "gradle/verification-metadata.xml",
 }: let
+  root = if lib.isPath src then src else src.origSrc;
+  
   filteredSrc = lib.fileset.toSource {
-    root = src;
-    fileset = lib.path.append src verificationFile;
+    inherit root;
+    fileset = lib.path.append root verificationFile;
   };
 
   depSpecs = builtins.filter dependencyFilter (
